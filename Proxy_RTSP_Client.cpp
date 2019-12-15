@@ -1,10 +1,11 @@
-#include <boost/asio/buffer.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/read_until.hpp>
-#include <boost/asio/steady_timer.hpp>
-#include <boost/asio/write.hpp>
+// #include <boost/asio/buffer.hpp>
+// #include <boost/asio/io_context.hpp>
+// #include <boost/asio/ip/tcp.hpp>
+// #include <boost/asio/read_until.hpp>
+// #include <boost/asio/steady_timer.hpp>
+// #include <boost/asio/write.hpp>
 #include <boost/bind.hpp>
+#include <boost/asio.hpp>
 #include <iostream>
 #include <string>
 #include "RequestHandler.hpp"
@@ -76,15 +77,16 @@ using boost::asio::ip::tcp;
 class client
 {
 public:
-    int count;
-    RequestHandler req;
-    ResponseHandler res;
+  int count;
+  RequestHandler req;
+  ResponseHandler res;
+  boost::asio::streambuf response_;
 
-  client(boost::asio::io_context& io_context)
-    : stopped_(false),
-      socket_(io_context),
-      deadline_(io_context),
-      heartbeat_timer_(io_context), count(0)
+  client(boost::asio::io_context &io_context)
+      : stopped_(false),
+        socket_(io_context),
+        deadline_(io_context),
+        heartbeat_timer_(io_context), count(0)
   {
   }
 
@@ -126,8 +128,8 @@ private:
 
       // Start the asynchronous connect operation.
       socket_.async_connect(endpoint_iter->endpoint(),
-          boost::bind(&client::handle_connect,
-            this, _1, endpoint_iter));
+                            boost::bind(&client::handle_connect,
+                                        this, _1, endpoint_iter));
     }
     else
     {
@@ -136,8 +138,8 @@ private:
     }
   }
 
-  void handle_connect(const boost::system::error_code& ec,
-      tcp::resolver::results_type::iterator endpoint_iter)
+  void handle_connect(const boost::system::error_code &ec,
+                      tcp::resolver::results_type::iterator endpoint_iter)
   {
     if (stopped_)
       return;
@@ -170,84 +172,103 @@ private:
     else
     {
       std::cout << "Connected to " << endpoint_iter->endpoint() << "\n";
-
-      // Start the input actor.
-      start_read();
-
       // Start the heartbeat actor.
       start_write();
+      // Start the input actor.
+      start_read();
     }
   }
 
   void start_read()
   {
     // Set a deadline for the read operation.
-    deadline_.expires_after(boost::asio::chrono::seconds(30));
+    // deadline_.expires_after(boost::asio::chrono::seconds(30));
 
     // Start an asynchronous operation to read a newline-delimited message.
-    boost::asio::async_read_until(socket_,
-        boost::asio::dynamic_buffer(input_buffer_), "\r\n",
-        boost::bind(&client::handle_read, this, _1, _2));
-      
+    // boost::asio::async_read_until(socket_,
+    //     boost::asio::dynamic_buffer(input_buffer_), "\r\n",
+    //     boost::bind(&client::handle_read, this, _1, _2));
+
+    boost::asio::async_read(socket_, response_,
+                            boost::asio::transfer_at_least(1),
+                            boost::bind(&client::handle_read, this, _1, _2));
+
+    // boost::asio::async_read(socket_, boost::asio::dynamic_buffer(input_buffer_),
+    //                         boost::asio::transfer_at_least(1),
+    //                         boost::bind(&client::handle_read, this, _1, _2));  
+    cout << "Read!!!!!!! EOF??" << endl;
   }
 
-  void handle_read(const boost::system::error_code& ec, std::size_t n)
+  void handle_read(const boost::system::error_code &ec, std::size_t n)
   {
-    if (stopped_)
+      if (stopped_)
+    {
+      cout << "Read  Stop()\n";
       return;
+    }
 
     if (!ec)
     {
-      // Extract the newline-delimited message from the buffer.
-      std::string line(input_buffer_.substr(0, n - 1));
-      input_buffer_.erase(0, n);
-
-      // Empty messages are heartbeats and so ignored.
-      if (!line.empty())
+      // int c=0;
+      // // Extract the newline-delimited message from the buffer.
+      // std::string line(input_buffer_.substr(0, n - 1));
+      // input_buffer_.erase(0, n);
+      // // Empty messages are heartbeats and so ignored.
+      // if (!line.empty())
+      // {
+      //   std::cout << ++c << ":" << line << "\n";
+      //   res.saveResponseToFile(line);
+      // }
+      
+      std::istream response_stream(&response_);
+      std::string header;
+      int c = 0;
+      while (std::getline(response_stream, header) && header != "\r")
       {
-        // std::cout << "Received: " << line << "\n";
-        res.inputData(line);
-        // res.parseData();
-        res.saveResponseToFile(line);
+        std::cout << ++c << ": " << header << "\n";
+        res.saveResponseToFile(header);
       }
+      cout << "\n";
+      
       start_read();
     }
     else
-    {
+    {   
       std::cout << "Error on receive: " << ec.message() << "\n";
-
       stop();
     }
   }
 
   void start_write()
   {
-    if (stopped_) {
+    if (stopped_)
+    {
       cout << "start_write STOP\n";
       return;
     }
-      
-    if(count < 3 ) {
-        // Start an asynchronous operation to send a heartbeat message.
-        boost::asio::async_write(socket_, boost::asio::buffer(req.getMessageSet(count), req.getMessageSet(count).size()),
-        boost::bind(&client::handle_write, this, _1));
+
+    if (count < 3)
+    {
+      // Start an asynchronous operation to send a heartbeat message.
+      boost::asio::async_write(socket_, boost::asio::buffer(req.getMessageSet(count), req.getMessageSet(count).size()),
+                               boost::bind(&client::handle_write, this, _1));
     }
   }
 
-  void handle_write(const boost::system::error_code& ec)
+  void handle_write(const boost::system::error_code &ec)
   {
-    if (stopped_) {
-      cout << "handler_write 110000\n"; 
+    if (stopped_)
+    {
+      cout << "handler_write 110000\n";
       return;
     }
-      
 
     if (!ec)
     {
-        count++;
-        // Wait 10 seconds before sending the next heartbeat.
-        heartbeat_timer_.expires_after(boost::asio::chrono::seconds(10));
-        heartbeat_timer_.async_wait(boost::bind(&client::start_write, this));
+      count++;
+      // Wait 10 seconds before sending the next heartbeat.
+      heartbeat_timer_.expires_after(boost::asio::chrono::seconds(10));
+      heartbeat_timer_.async_wait(boost::bind(&client::start_write, this));
     }
     else
     {
@@ -290,7 +311,7 @@ private:
   steady_timer heartbeat_timer_;
 };
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
   try
   {
@@ -308,7 +329,7 @@ int main(int argc, char* argv[])
 
     io_context.run();
   }
-  catch (std::exception& e)
+  catch (std::exception &e)
   {
     std::cerr << "Exception: " << e.what() << "\n";
   }

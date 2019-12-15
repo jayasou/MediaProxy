@@ -20,8 +20,18 @@ class ResponseHandler : public MessageHandler {
             cout << "close response.txt\n";
             outfile.close();
         }
+        bool checkContentLengthHeader(string input_header) {
+            int separator_index = input_header.find_first_of(":");
+            string key = input_header.substr(0, separator_index);
+            string value = input_header.substr(separator_index + 1, input_header.size() - 1);
+            if(key == "Content-Length" && stoi(value) > 0) {
+                return true;
+            }
+            return false;
+        }
+
         void saveResponseToFile(string input_message) {
-            outfile << "----------------------------------------\n";
+            outfile << "--------------------------\n";
             outfile << input_message;
         }
         

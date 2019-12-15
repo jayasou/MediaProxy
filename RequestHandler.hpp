@@ -5,12 +5,14 @@
 using namespace std;
 
 enum METHOD {
-    OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN
+    OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN, GET_PARAMETER
 };
 /*
 1. FromClientRequestHandler
     session ?
     port number ?
+
+    
 
 2. ToServerRequestHandler
     session
